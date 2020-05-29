@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:location/location.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:device_info/device_info.dart';
 
 class MyHomePage extends StatefulWidget {
   MyHomePage({Key key, this.title}) : super(key: key);
@@ -22,13 +26,14 @@ class MyHomePage extends StatefulWidget {
   _MyHomePageState createState() => _MyHomePageState();
 }
 
-
 class _MyHomePageState extends State<MyHomePage> {
-  final LatLng capetown = const LatLng(-33.92584, 18.42322); //Cape Town
+  Completer<GoogleMapController> _controller = Completer();
 
-   Completer<GoogleMapController> _controller = Completer();
+  Map<MarkerId, Marker> markers = <MarkerId, Marker>{};
+  MarkerId selectedMarker;
+  int _markerIdCounter = 1;
 
-  static final CameraPosition _CapeTown = CameraPosition(
+  static final CameraPosition _capeTown = CameraPosition(
     target: LatLng(-33.92584, 18.423222),
     zoom: 9.6,
   );
@@ -38,10 +43,11 @@ class _MyHomePageState extends State<MyHomePage> {
     return new Scaffold(
       body: GoogleMap(
         mapType: MapType.hybrid,
-        initialCameraPosition: _CapeTown,
+        initialCameraPosition: _capeTown,
         onMapCreated: (GoogleMapController controller) {
           _controller.complete(controller);
         },
+        markers: Set<Marker>.of(markers.values),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _startPublish,
@@ -51,16 +57,57 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  static final CameraPosition _kLake = CameraPosition(
-      bearing: 192.8334901395799,
-      target: LatLng(37.43296265331129, -122.08832357078792),
-      tilt: 59.440717697143555,
-      zoom: 19.151926040649414);
-
   Future<void> _startPublish() async {
     final GoogleMapController controller = await _controller.future;
-    controller.animateCamera(CameraUpdate.newCameraPosition(_kLake));
+    Position position = await Geolocator()
+        .getLastKnownPosition(desiredAccuracy: LocationAccuracy.high);
+
+    final CameraPosition _capeView = CameraPosition(
+        bearing: 192.8334901395799,
+        target: LatLng(position != null ? position.latitude : -33.92584,
+            position != null ? position.longitude : 18.423222),
+        tilt: 59.440717697143555,
+        zoom: 19.151926040649414);
+
+    controller.animateCamera(CameraUpdate.newCameraPosition(_capeView));
+
+    if (position != null) {
+      var geolocator = Geolocator();
+      var locationOptions =
+          LocationOptions(accuracy: LocationAccuracy.high, distanceFilter: 10);
+
+      StreamSubscription<Position> positionStream = geolocator
+          .getPositionStream(locationOptions)
+          .listen((Position position) {
+        final String markerIdVal = 'marker_id_$_markerIdCounter';
+        _markerIdCounter++;
+        final MarkerId markerId = MarkerId(markerIdVal);
+
+        final Marker marker = Marker(
+          markerId: markerId,
+          position: LatLng(
+            position.latitude,
+            position.longitude,
+          ),
+          infoWindow: InfoWindow(title: 'Unknown', 
+            snippet: "*",
+         )
+        );
+
+        setState(() {
+          markers[markerId] = marker;
+        });
+
+        final CameraPosition _track = CameraPosition(
+          bearing: 192.8334901395799,
+          target: LatLng(position.latitude,
+            position.longitude ),
+            tilt: 59.440717697143555,
+          zoom: 19.151926040649414);
+
+        controller.animateCamera(CameraUpdate.newCameraPosition(_track));
+
+      });
+    }
   }
 }
-
- 
