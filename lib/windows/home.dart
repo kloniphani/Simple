@@ -9,6 +9,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:device_info/device_info.dart';
 import 'package:noise_meter/noise_meter.dart';
+import 'package:mysql1/mysql1.dart';
 
 class MyHomePage extends StatefulWidget {
   MyHomePage({Key key, this.title}) : super(key: key);
@@ -45,10 +46,13 @@ class _MyHomePageState extends State<MyHomePage> {
   String _deviceVersion;
   String _identifier;
 
+  var _conn = null;
+
   @override
   void initState() {
     super.initState();
     initPlatformState();
+    connectMySQL();
   }
 
   static final CameraPosition _capeTown = CameraPosition(
@@ -66,9 +70,10 @@ class _MyHomePageState extends State<MyHomePage> {
           _controller.complete(controller);
         },
         markers: Set<Marker>.of(markers.values),
+        mapToolbarEnabled: false,
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _isRecording ?  stop : _startPublish,
+        onPressed: _isRecording ? stop : _startPublish,
         label: _isRecording ? Text('Stop') : Text('Start'),
         icon: _isRecording ? Icon(Icons.stop) : Icon(Icons.publish),
         backgroundColor: _isRecording ? Colors.red : Colors.green,
@@ -95,7 +100,7 @@ class _MyHomePageState extends State<MyHomePage> {
     if (position != null) {
       var geolocator = Geolocator();
       var locationOptions =
-          LocationOptions(accuracy: LocationAccuracy.high, distanceFilter: 10);      
+          LocationOptions(accuracy: LocationAccuracy.high, distanceFilter: 10);
 
       StreamSubscription<Position> positionStream = geolocator
           .getPositionStream(locationOptions)
@@ -104,30 +109,45 @@ class _MyHomePageState extends State<MyHomePage> {
         _markerIdCounter++;
         final MarkerId markerId = MarkerId(markerIdVal);
 
+        var now = new DateTime.now().toUtc();
+
+        querySQL(
+            'insert into track (timestamp, deviceName, deviceVersion, identifier, noiseLevel, lat, lng) values (?, ?, ?, ?, ?, ?, ?)',
+            [
+              now,
+              _deviceName,
+              _deviceVersion,
+              _identifier,
+              _noiseReading.maxDecibel,
+              position.latitude,
+              position.longitude
+            ]);
+
         final Marker marker = Marker(
-          markerId: markerId,
-          position: LatLng(
-            position.latitude,
-            position.longitude,
-          ),
-          infoWindow: InfoWindow(title: _deviceName, 
-            snippet: "Noise Level: " + _noiseReading.maxDecibel.toString() + " dB",
-         )
-        );
+            markerId: markerId,
+            position: LatLng(
+              position.latitude,
+              position.longitude,
+            ),
+            infoWindow: InfoWindow(
+              title: _deviceName,
+              snippet: "Noise Level: " +
+                  _noiseReading.maxDecibel.toStringAsFixed(2) +
+                  " dB\n" +
+                  now.toString(),
+            ));
 
         setState(() {
           markers[markerId] = marker;
-        });        
+        });
 
         final CameraPosition _track = CameraPosition(
-          bearing: 192.8334901395799,
-          target: LatLng(position.latitude,
-            position.longitude ),
+            bearing: 192.8334901395799,
+            target: LatLng(position.latitude, position.longitude),
             tilt: 59.440717697143555,
-          zoom: 19.151926040649414);
+            zoom: 19.151926040649414);
 
         controller.animateCamera(CameraUpdate.newCameraPosition(_track));
-
       });
     }
   }
@@ -142,17 +162,17 @@ class _MyHomePageState extends State<MyHomePage> {
         var build = await deviceInfoPlugin.androidInfo;
         deviceName = build.model;
         deviceVersion = build.version.toString();
-        identifier = build.androidId;  //UUID for Android
+        identifier = build.androidId; //UUID for Android
       } else if (Platform.isIOS) {
         var data = await deviceInfoPlugin.iosInfo;
         deviceName = data.name;
         deviceVersion = data.systemVersion;
-        identifier = data.identifierForVendor;  //UUID for iOS
+        identifier = data.identifierForVendor; //UUID for iOS
       }
     } on PlatformException {
-        print('Failed to get platform version');
-      }
-    
+      print('Failed to get platform version');
+    }
+
     if (!mounted) return;
 
     setState(() {
@@ -191,6 +211,36 @@ class _MyHomePageState extends State<MyHomePage> {
       });
     } catch (err) {
       print('stopRecorder error: $err');
+    }
+
+    closeMySQL();
+  }
+
+  Future connectMySQL() async {
+    var settings = new ConnectionSettings(
+        host: '154.0.167.54',
+        port: 3306,
+        user: 'lookswpx_push',
+        password: 'simplepush',
+        db: 'lookswpx_simple');
+    var conn = await MySqlConnection.connect(settings);
+
+    if (!mounted) return;
+
+    setState(() {
+      _conn = conn;
+    });
+  }
+
+  Future closeMySQL() async {
+    if (_conn != null) {
+      await _conn.close();
+    }
+  }
+
+  Future querySQL(var query, var values) async {
+    if (_conn != null) {
+      await _conn.query(query, values);
     }
   }
 }
