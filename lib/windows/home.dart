@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -53,6 +52,12 @@ class _MyHomePageState extends State<MyHomePage> {
     super.initState();
     initPlatformState();
     connectMySQL();
+  }
+
+  @override
+  void dispose() {
+    closeMySQL();
+    stop();
   }
 
   static final CameraPosition _capeTown = CameraPosition(
@@ -212,17 +217,15 @@ class _MyHomePageState extends State<MyHomePage> {
     } catch (err) {
       print('stopRecorder error: $err');
     }
-
-    closeMySQL();
   }
 
   Future connectMySQL() async {
     var settings = new ConnectionSettings(
-        host: '154.0.167.54',
+        host: '154.0.168.111',
         port: 3306,
-        user: 'lookswpx_push',
+        user: 'malooher_push',
         password: 'simplepush',
-        db: 'lookswpx_simple');
+        db: 'malooher_simple');
     var conn = await MySqlConnection.connect(settings);
 
     if (!mounted) return;
